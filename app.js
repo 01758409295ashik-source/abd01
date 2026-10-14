@@ -1,76 +1,98 @@
-/* Rokomari Inventory. Uses only Supabase URL + publishable/anon key in the browser. */
-let sb = null, currentUser = null, currentRole = "employee", products = [];
+/* Rokomari Inventory — frontend-only edition. No backend, API, or Supabase. */
 const $ = id => document.getElementById(id);
-const show = (id, yes=true) => $(id).classList.toggle("hidden", !yes);
-function message(text, error=false){$("message").textContent=text;$("message").className=error?"error":"ok";}
-function esc(v){return String(v ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-function config(){return {url:localStorage.getItem("ri_url"),key:localStorage.getItem("ri_key")};}
-function startClient(){
-  const c=config();
-  if(!c.url||!c.key){show("setupCard");show("authCard",false);show("app",false);return;}
-  try{sb=window.supabase.createClient(c.url,c.key);}catch(e){show("setupCard");alert("Project URL বা key ঠিক আছে কি না দেখুন।");return;}
-  show("setupCard",false);
-  sb.auth.getSession().then(({data})=>{if(data.session){currentUser=data.session.user;openApp();}else{show("authCard");show("app",false);show("logoutBtn",false);}});
-}
-$("saveConfig").onclick=()=>{
- const url=$("projectUrl").value.trim().replace(/\/+$/,""), key=$("publishableKey").value.trim();
- if(!/^https:\/\/.+\.supabase\.co$/.test(url)||!key){alert("সঠিক Supabase Project URL এবং publishable key দিন।");return;}
- localStorage.setItem("ri_url",url);localStorage.setItem("ri_key",key);startClient();
-};
-$("changeConfig").onclick=()=>{const c=config();$("projectUrl").value=c.url||"";$("publishableKey").value=c.key||"";show("setupCard");show("authCard",false);};
-$("loginBtn").onclick=async()=>{const {error,data}=await sb.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});if(error)return alert(error.message);currentUser=data.user;openApp();};
-$("signupBtn").onclick=async()=>{const {error}=await sb.auth.signUp({email:$("email").value.trim(),password:$("password").value});if(error)return alert(error.message);alert("সাইনআপ অনুরোধ পাঠানো হয়েছে। ইমেইল ভেরিফিকেশন লাগতে পারে। এরপর লগইন করুন।");};
-$("logoutBtn").onclick=async()=>{if(sb)await sb.auth.signOut();currentUser=null;show("app",false);show("authCard");show("logoutBtn",false);};
-$("refreshBtn").onclick=loadAll;
-async function openApp(){
- show("authCard",false);show("app");show("logoutBtn");$("welcomeTitle").textContent="ড্যাশবোর্ড"; 
- const {data:roleRow,error}=await sb.from("user_roles").select("role").eq("user_id",currentUser.id).maybeSingle();
- if(error){message("Role পড়া যায়নি: "+error.message,true);return;}
- currentRole=roleRow?.role||"employee";$("roleLabel").textContent="লগইন: "+currentUser.email+" • ভূমিকা: "+(currentRole==="admin"?"অ্যাডমিন":"কর্মচারী");
- show("financeCard",currentRole==="admin");
- await loadAll();
-}
-async function loadAll(){
- const {data,error}=await sb.from("products").select("id,name,sku,quantity,created_at").order("created_at",{ascending:false});
- if(error){message("পণ্য লোড হয়নি: "+error.message,true);return;}
- products=data||[];
+const STORE_KEY = "rokomari_inventory_frontend_v1";
+const emptyState = { products: [], sales: [], financials: {}, expenses: [] };
+let state = loadState();
 
- $("productsArea").innerHTML=products.length?`<table><thead><tr><th>পণ্য</th><th>কোড</th><th>স্টক</th></tr></thead><tbody>${products.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.sku||"—")}</td><td class="qty">${esc(p.quantity)}</td></tr>`).join("")}</tbody></table>`:"এখনো কোনো পণ্য নেই।";
- const options=products.map(p=>`<option value="${p.id}">${esc(p.name)} (স্টক: ${p.quantity})</option>`).join("");
- $("saleProduct").innerHTML=options;$("financeProduct").innerHTML=options;
- const {data:sales,error:se}=await sb.from("sales").select("id,product_id,quantity,customer_phone,created_at,products(name)").order("created_at",{ascending:false}).limit(100);
- if(se){$("salesArea").textContent="বিক্রয় ইতিহাস পড়া যায়নি।";}else{$("salesArea").innerHTML=(sales||[]).length?`<table><thead><tr><th>তারিখ</th><th>পণ্য</th><th>পরিমাণ</th><th>ফোন</th></tr></thead><tbody>${sales.map(s=>`<tr><td>${new Date(s.created_at).toLocaleString("bn-BD")}</td><td>${esc(s.products?.name||"পণ্য #"+s.product_id)}</td><td>${s.quantity}</td><td>${esc(s.customer_phone||"—")}</td></tr>`).join("")}</tbody></table>`:"কোনো বিক্রয় নেই।";}
- if(currentRole==="admin") await loadFinance();
+function loadState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    return saved && Array.isArray(saved.products) ? {...emptyState, ...saved} : structuredClone(emptyState);
+  } catch (_) { return structuredClone(emptyState); }
 }
-$("productForm").onsubmit=async e=>{
- e.preventDefault();const name=$("pName").value.trim(),sku=$("pSku").value.trim()||null,quantity=Number($("pQty").value);
- const {error}=await sb.rpc("create_product",{p_name:name,p_sku:sku,p_quantity:quantity});
- if(error){message("পণ্য যোগ হয়নি: "+error.message,true);return;}
- e.target.reset();$("pQty").value=0;message("পণ্য যোগ হয়েছে।");await loadAll();
-};
-$("saleForm").onsubmit=async e=>{
- e.preventDefault();const productId=Number($("saleProduct").value),quantity=Number($("saleQty").value),phone=$("customerPhone").value.trim()||null;
- if(!productId)return alert("আগে পণ্য যোগ করুন।");
- const {error}=await sb.rpc("record_sale",{p_product_id:productId,p_quantity:quantity,p_customer_phone:phone});
- if(error){message("বিক্রি সংরক্ষণ হয়নি: "+error.message,true);return;}
- e.target.reset();message("বিক্রি সংরক্ষণ হয়েছে এবং স্টক আপডেট হয়েছে।");await loadAll();
-};
-$("financeForm").onsubmit=async e=>{
- e.preventDefault();if(currentRole!=="admin")return;
- const {error}=await sb.rpc("upsert_product_financials",{p_product_id:Number($("financeProduct").value),p_buy_price:Number($("buyPrice").value),p_sell_price:Number($("sellPrice").value)});
- if(error){message("মূল্য সংরক্ষণ হয়নি: "+error.message,true);return;}
- message("মূল্য সংরক্ষণ হয়েছে।");await loadFinance();
-};
-$("expenseForm").onsubmit=async e=>{
- e.preventDefault();if(currentRole!=="admin")return;
- const {error}=await sb.rpc("add_expense",{p_note:$("expenseNote").value.trim(),p_amount:Number($("expenseAmount").value)});
- if(error){message("খরচ সংরক্ষণ হয়নি: "+error.message,true);return;}
- e.target.reset();message("খরচ সংরক্ষণ হয়েছে।");await loadFinance();
-};
-async function loadFinance(){
- const {data:prices,error}=await sb.from("product_financials").select("product_id,buy_price,sell_price,products(name)");
- const {data:expenses,error:ee}=await sb.from("expenses").select("note,amount,created_at").order("created_at",{ascending:false}).limit(50);
- if(error||ee){$("financeArea").textContent="হিসাব পড়া যায়নি। SQL setup ও admin role যাচাই করুন।";return;}
- $("financeArea").innerHTML=`<h3>পণ্যের মূল্য</h3>${(prices||[]).length?`<table><thead><tr><th>পণ্য</th><th>ক্রয়মূল্য</th><th>বিক্রয়মূল্য</th></tr></thead><tbody>${prices.map(p=>`<tr><td>${esc(p.products?.name||"পণ্য")}</td><td>${Number(p.buy_price).toFixed(2)}</td><td>${Number(p.sell_price).toFixed(2)}</td></tr>`).join("")}</tbody></table>`:"কোনো মূল্য সংরক্ষণ করা হয়নি।"}<h3 class="topgap">খরচের তালিকা</h3>${(expenses||[]).length?`<table><thead><tr><th>তারিখ</th><th>বিবরণ</th><th>টাকা</th></tr></thead><tbody>${expenses.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString("bn-BD")}</td><td>${esc(x.note)}</td><td>${Number(x.amount).toFixed(2)}</td></tr>`).join("")}</tbody></table>`:"কোনো খরচ নেই।"}`;
+function persist() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  catch (_) { message("ব্রাউজারে ডেটা সংরক্ষণ করা যায়নি। Storage খালি করুন বা অন্য ব্রাউজার ব্যবহার করুন।", true); }
 }
-startClient();
+function show(id, yes=true) { $(id).classList.toggle("hidden", !yes); }
+function message(text, error=false) { $("message").textContent=text; $("message").className=error?"error":"ok"; }
+function esc(v) { return String(v ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function money(v) { return Number(v || 0).toLocaleString("bn-BD",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function dateLabel(v) { return new Date(v).toLocaleString("bn-BD"); }
+
+function render() {
+  const products = state.products;
+  $("productsArea").innerHTML = products.length
+    ? `<table><thead><tr><th>পণ্য</th><th>কোড</th><th>স্টক</th><th>অ্যাকশন</th></tr></thead><tbody>${products.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.sku||"—")}</td><td class="qty">${p.quantity}</td><td><button class="secondary" data-edit="${p.id}" type="button">স্টক বদল</button> <button class="danger" data-delete="${p.id}" type="button">মুছুন</button></td></tr>`).join("")}</tbody></table>`
+    : "এখনো কোনো পণ্য নেই। উপরের ফর্ম থেকে পণ্য যোগ করুন।";
+  const options = products.map(p=>`<option value="${p.id}">${esc(p.name)} (স্টক: ${p.quantity})</option>`).join("");
+  $("saleProduct").innerHTML = `<option value="">পণ্য বাছাই করুন</option>${options}`;
+  $("financeProduct").innerHTML = `<option value="">পণ্য বাছাই করুন</option>${options}`;
+  $("salesArea").innerHTML = state.sales.length
+    ? `<table><thead><tr><th>তারিখ</th><th>পণ্য</th><th>পরিমাণ</th><th>ফোন</th></tr></thead><tbody>${state.sales.slice().reverse().slice(0,100).map(s=>`<tr><td>${dateLabel(s.created_at)}</td><td>${esc(s.product_name)}</td><td>${s.quantity}</td><td>${esc(s.customer_phone||"—")}</td></tr>`).join("")}</tbody></table>`
+    : "কোনো বিক্রয় নেই।";
+  renderFinance();
+}
+function renderFinance() {
+  const prices = state.products.filter(p=>state.financials[p.id]);
+  $("financeArea").innerHTML = `<h3>পণ্যের মূল্য</h3>${prices.length
+    ? `<table><thead><tr><th>পণ্য</th><th>ক্রয়মূল্য</th><th>বিক্রয়মূল্য</th></tr></thead><tbody>${prices.map(p=>`<tr><td>${esc(p.name)}</td><td>${money(state.financials[p.id].buy_price)} টাকা</td><td>${money(state.financials[p.id].sell_price)} টাকা</td></tr>`).join("")}</tbody></table>`
+    : "<p>এখনো কোনো পণ্যের মূল্য যোগ করা হয়নি।</p>"}<h3 class="topgap">খরচের তালিকা</h3>${state.expenses.length
+    ? `<table><thead><tr><th>তারিখ</th><th>বিবরণ</th><th>টাকা</th><th></th></tr></thead><tbody>${state.expenses.slice().reverse().map(x=>`<tr><td>${dateLabel(x.created_at)}</td><td>${esc(x.note)}</td><td>${money(x.amount)}</td><td><button class="danger" data-expense-delete="${x.id}" type="button">মুছুন</button></td></tr>`).join("")}</tbody></table>`
+    : "<p>কোনো খরচ নেই।</p>"}`;
+}
+$("productForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const name=$("pName").value.trim(), sku=$("pSku").value.trim(), quantity=Number($("pQty").value);
+  if(!name || !Number.isInteger(quantity) || quantity<0) return message("পণ্যের নাম ও সঠিক স্টক দিন।",true);
+  if(sku && state.products.some(p=>p.sku.toLowerCase()===sku.toLowerCase())) return message("এই SKU/কোড আগে ব্যবহার করা হয়েছে।",true);
+  state.products.push({id:String(Date.now())+Math.random().toString(16).slice(2,6),name,sku,quantity,created_at:new Date().toISOString()});
+  persist(); e.target.reset(); $("pQty").value=0; render(); message("পণ্য যোগ হয়েছে।");
+});
+$("saleForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const p=state.products.find(x=>x.id===$("saleProduct").value), quantity=Number($("saleQty").value), phone=$("customerPhone").value.trim();
+  if(!p) return message("আগে পণ্য যোগ করে বাছাই করুন।",true);
+  if(!Number.isInteger(quantity)||quantity<1) return message("বিক্রির পরিমাণ সঠিক দিন।",true);
+  if(quantity>p.quantity) return message("স্টকের চেয়ে বেশি বিক্রি করা যাবে না।",true);
+  p.quantity-=quantity;
+  state.sales.push({id:String(Date.now()),product_id:p.id,product_name:p.name,quantity,customer_phone:phone,created_at:new Date().toISOString()});
+  persist(); e.target.reset(); render(); message("বিক্রি সংরক্ষণ হয়েছে এবং স্টক কমানো হয়েছে।");
+});
+$("financeForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const id=$("financeProduct").value;
+  if(!id || !state.products.some(p=>p.id===id)) return message("একটি পণ্য বাছাই করুন।",true);
+  state.financials[id]={buy_price:Number($("buyPrice").value),sell_price:Number($("sellPrice").value)};
+  persist(); renderFinance(); e.target.reset(); message("পণ্যের মূল্য সংরক্ষণ হয়েছে।");
+});
+$("expenseForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const note=$("expenseNote").value.trim(), amount=Number($("expenseAmount").value);
+  if(!note || !Number.isFinite(amount) || amount<=0) return message("খরচের বিবরণ ও সঠিক টাকা দিন।",true);
+  state.expenses.push({id:String(Date.now()),note,amount,created_at:new Date().toISOString()});
+  persist(); renderFinance(); e.target.reset(); message("খরচ সংরক্ষণ হয়েছে।");
+});
+$("refreshBtn").addEventListener("click",()=>{state=loadState();render();message("ডেটা রিফ্রেশ হয়েছে।");});
+document.addEventListener("click", e => {
+  const edit=e.target.closest("[data-edit]");
+  if(edit) {
+    const p=state.products.find(x=>x.id===edit.dataset.edit); if(!p)return;
+    const raw=prompt(`"${p.name}"-এর নতুন মোট স্টক লিখুন:`,String(p.quantity));
+    if(raw===null)return; const n=Number(raw);
+    if(!Number.isInteger(n)||n<0)return message("০ বা তার বেশি পূর্ণসংখ্যা দিন।",true);
+    p.quantity=n;persist();render();message("স্টক আপডেট হয়েছে।");return;
+  }
+  const del=e.target.closest("[data-delete]");
+  if(del) {
+    const p=state.products.find(x=>x.id===del.dataset.delete);if(!p)return;
+    if(!confirm(`"${p.name}" পণ্যটি মুছে ফেলবেন? বিক্রয় ইতিহাসে পুরোনো তথ্য থাকবে।`))return;
+    state.products=state.products.filter(x=>x.id!==p.id);delete state.financials[p.id];persist();render();message("পণ্য মুছে ফেলা হয়েছে।");return;
+  }
+  const ex=e.target.closest("[data-expense-delete]");
+  if(ex) {
+    if(!confirm("এই খরচের রেকর্ড মুছবেন?"))return;
+    state.expenses=state.expenses.filter(x=>x.id!==ex.dataset.expenseDelete);persist();renderFinance();message("খরচের রেকর্ড মুছে ফেলা হয়েছে।");
+  }
+});
+render();

@@ -4,28 +4,11 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Rokomari Inventory</title>
 <link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div class="wrap">
-  <header><div><h1>Rokomari Inventory</h1><p>স্টক • বিক্রয় • হিসাব</p></div><button id="logoutBtn" class="secondary hidden">লগআউট</button></header>
-  <section id="setupCard" class="card hidden">
-    <h2>Supabase সংযোগ</h2>
-    <p>Supabase Project URL এবং <b>publishable/anon key</b> দিন। Secret বা service_role key কখনো দেবেন না।</p>
-    <label>Project URL<input id="projectUrl" placeholder="https://YOUR_PROJECT.supabase.co"></label>
-    <label>Publishable / anon key<textarea id="publishableKey" rows="3" placeholder="Supabase publishable key"></textarea></label>
-    <button id="saveConfig">সংযোগ করুন</button>
-    <p class="muted">এই তথ্য শুধু এই ব্রাউজারের লোকাল স্টোরেজে থাকবে।</p>
-  </section>
-  <section id="authCard" class="card hidden">
-    <h2>লগইন / নতুন অ্যাকাউন্ট</h2>
-    <label>ইমেইল<input id="email" type="email" autocomplete="username"></label>
-    <label>পাসওয়ার্ড<input id="password" type="password" autocomplete="current-password"></label>
-    <div class="buttons"><button id="loginBtn">লগইন</button><button id="signupBtn" class="secondary">নতুন অ্যাকাউন্ট</button></div>
-    <p class="muted">নতুন অ্যাকাউন্ট খোলার পর ইমেইল ভেরিফিকেশন লাগতে পারে। প্রথম ব্যবহারকারীকে SQL script দিয়ে admin করতে হবে।</p>
-    <button id="changeConfig" class="linkbtn">Supabase সংযোগ পরিবর্তন</button>
-  </section>
-  <main id="app" class="hidden">
+  <header><div><h1>Rokomari Inventory</h1><p>স্টক • বিক্রয় • হিসাব</p></div></header>
+  <main id="app">
     <section class="card welcome"><div><h2 id="welcomeTitle">ড্যাশবোর্ড</h2><p id="roleLabel" class="muted"></p></div><button id="refreshBtn" class="secondary">রিফ্রেশ</button></section>
     <div id="message" role="status"></div>
     <section class="card">
@@ -52,9 +35,9 @@
     <section id="salesCard" class="card">
       <h2>বিক্রয় ইতিহাস</h2><div id="salesArea" class="tablewrap">লোড হচ্ছে…</div>
     </section>
-    <section id="financeCard" class="card hidden">
+    <section id="financeCard" class="card">
       <h2>অ্যাডমিন হিসাব</h2>
-      <p class="muted">এই অংশে পণ্যের ক্রয়/বিক্রয় মূল্য ও খরচ যোগ করা যাবে। আর্থিক টেবিলের নিরাপত্তা SQL নীতির ওপর নির্ভর করে।</p>
+      <p class="muted">এই হিসাব শুধু এই ব্রাউজারে সংরক্ষিত থাকবে। এটি নিরাপদ অনলাইন ডেটাবেস নয়।</p>
       <form id="financeForm" class="formgrid">
         <label>পণ্য<select id="financeProduct" required></select></label>
         <label>ক্রয়মূল্য (প্রতি পিস)<input id="buyPrice" type="number" min="0" step="0.01" required></label>
@@ -69,7 +52,7 @@
       <div id="financeArea" class="tablewrap topgap"></div>
     </section>
   </main>
-  <footer><small>Rokomari Inventory • আপনার ব্যবসার তথ্য সুরক্ষিত রাখতে Supabase RLS ও SQL setup সম্পন্ন করুন।</small></footer>
+  <footer><small>Rokomari Inventory • Frontend-only version • তথ্য এই ব্রাউজারের Local Storage-এ সংরক্ষিত</small></footer>
 </div>
 <script src="app.js"></script>
 </body></html>
